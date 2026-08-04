@@ -1,0 +1,1037 @@
+"use client";
+
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Info,
+  Menu,
+  MessageCircleMore,
+  Moon,
+  PanelRightOpen,
+  Plus,
+  RotateCcw,
+  Settings2,
+  Square,
+  Sun,
+  ThumbsUp,
+  X,
+} from "lucide-react";
+import {
+  getPersonaResponse,
+  TRAIT_CATALOG,
+  type PersonaSettings,
+  type PersonaTrace,
+} from "./persona-engine";
+
+type FeedbackValue = "same" | "different";
+
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  trace?: PersonaTrace;
+  feedback?: FeedbackValue;
+};
+
+type FeedbackDraft = {
+  messageId: string;
+  reasons: string[];
+  note: string;
+};
+
+const DEFAULT_SETTINGS: PersonaSettings = {
+  honesty: 85,
+  talkativeness: 75,
+  empathy: 80,
+  designPriority: 90,
+};
+
+const DEMO_PROMPTS = [
+  {
+    label: "나는 어떤 사람인 것 같아?",
+    prompt: "지금까지 확인된 내용을 바탕으로 나는 어떤 사람인지 설명해줘.",
+  },
+  {
+    label: "내 목표 기준으로 정해줘",
+    prompt: "개발 공부와 새 프로젝트 중 뭘 먼저 할지 내 장기 목표 기준으로 정해줘.",
+  },
+  {
+    label: "나라면 어떤 걸 고를까?",
+    prompt: "둘 중 하나를 골라야 하는데 나라면 어떤 기준으로 선택할까?",
+  },
+  {
+    label: "프로젝트 위기를 맡겨볼게",
+    prompt: "발표가 내일인데 Backend 담당이 API 연결을 포기했어.",
+  },
+  {
+    label: "내 말투로 답장해줘",
+    prompt: "친한 친구에게 보낼 답장을 내 말투로 같이 써줘.",
+  },
+  {
+    label: "창업 아이디어를 판단해줘",
+    prompt: "새로운 학교 앱 아이디어가 있는데 현실적으로 성공하기 어렵다는 말을 들었어.",
+  },
+];
+
+const FEEDBACK_REASONS = [
+  "말투가 다름",
+  "판단이 다름",
+  "너무 길거나 짧음",
+  "가치관 반영이 다름",
+  "기억이 다르거나 부족함",
+];
+
+const SELF_MODEL_AREAS = [
+  ["정체성", "개발·디자인·기획·브랜드를 연결하는 Maker"],
+  ["가치관", "착함, 고유함, 미적 완성도, 솔직한 판단"],
+  ["목표", "디자인과 개발을 융합한 Founder"],
+  ["행동", "먼저 만들고, 위기에서는 직접 해결"],
+  ["관계", "가까운 사람의 이야기를 먼저 듣기"],
+  ["표현", "친근한 대화체와 세심한 격식 전환"],
+] as const;
+
+const STORAGE_KEYS = {
+  messages: "yul-ai-demo:messages",
+  settings: "yul-ai-demo:settings",
+  feedback: "yul-ai-demo:feedback",
+  theme: "yul-ai-demo:theme",
+};
+
+const createId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const readStoredValue = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export default function Home() {
+  const reduceMotion = useReducedMotion();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [isResponding, setIsResponding] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [settings, setSettings] =
+    useState<PersonaSettings>(DEFAULT_SETTINGS);
+  const [openPanel, setOpenPanel] = useState<
+    "menu" | "inspector" | "settings" | null
+  >(null);
+  const [expandedTrace, setExpandedTrace] = useState<string | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    null,
+  );
+  const [feedbackDraft, setFeedbackDraft] =
+    useState<FeedbackDraft | null>(null);
+  const [savedFeedbackCount, setSavedFeedbackCount] = useState(0);
+  const [hasUnseen, setHasUnseen] = useState(false);
+
+  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
+
+  useEffect(() => {
+    const storedMessages = readStoredValue<ChatMessage[]>(
+      STORAGE_KEYS.messages,
+      [],
+    );
+    const storedSettings = readStoredValue<PersonaSettings>(
+      STORAGE_KEYS.settings,
+      DEFAULT_SETTINGS,
+    );
+    const storedTheme = window.localStorage.getItem(STORAGE_KEYS.theme);
+    const storedFeedback = readStoredValue<unknown[]>(STORAGE_KEYS.feedback, []);
+
+    queueMicrotask(() => {
+      setMessages(storedMessages);
+      setSettings(storedSettings);
+      setSavedFeedbackCount(storedFeedback.length);
+      setTheme(storedTheme === "light" ? "light" : "dark");
+      setHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages));
+  }, [hydrated, messages]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+  }, [hydrated, settings]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    if (hydrated) window.localStorage.setItem(STORAGE_KEYS.theme, theme);
+  }, [hydrated, theme]);
+
+  useEffect(() => {
+    if (!messages.length) return;
+    if (shouldAutoScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "end",
+      });
+      requestAnimationFrame(() => setHasUnseen(false));
+    } else if (messages.at(-1)?.role === "assistant") {
+      requestAnimationFrame(() => setHasUnseen(true));
+    }
+  }, [messages, reduceMotion]);
+
+  useEffect(
+    () => () => {
+      if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
+  }, [input]);
+
+  const latestAssistant = useMemo(
+    () => [...messages].reverse().find((message) => message.role === "assistant"),
+    [messages],
+  );
+
+  const selectedAssistant = useMemo(
+    () =>
+      messages.find(
+        (message) =>
+          message.id === selectedMessageId && message.role === "assistant",
+      ) ?? latestAssistant,
+    [latestAssistant, messages, selectedMessageId],
+  );
+
+  const motionTransition = reduceMotion
+    ? { duration: 0.15 }
+    : { type: "spring" as const, stiffness: 420, damping: 41, mass: 1 };
+
+  const submitMessage = (rawValue?: string) => {
+    const content = (rawValue ?? input).trim();
+    if (!content || isResponding) return;
+
+    const userMessage: ChatMessage = {
+      id: createId(),
+      role: "user",
+      content,
+    };
+
+    setMessages((current) => [...current, userMessage]);
+    setInput("");
+    setIsResponding(true);
+    shouldAutoScrollRef.current = true;
+
+    replyTimerRef.current = setTimeout(() => {
+      const result = getPersonaResponse(content, settings);
+      const assistantMessage: ChatMessage = {
+        id: createId(),
+        role: "assistant",
+        content: result.content,
+        trace: result.trace,
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setSelectedMessageId(assistantMessage.id);
+      setIsResponding(false);
+      replyTimerRef.current = null;
+    }, reduceMotion ? 120 : 520);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submitMessage();
+  };
+
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submitMessage();
+    }
+  };
+
+  const stopResponse = () => {
+    if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
+    replyTimerRef.current = null;
+    setIsResponding(false);
+  };
+
+  const startNewChat = () => {
+    stopResponse();
+    setMessages([]);
+    setSelectedMessageId(null);
+    setExpandedTrace(null);
+    setHasUnseen(false);
+    setOpenPanel(null);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const recordSameFeedback = (messageId: string) => {
+    const saved = readStoredValue<Record<string, unknown>[]>(
+      STORAGE_KEYS.feedback,
+      [],
+    );
+    const next = [
+      ...saved,
+      { messageId, value: "same" },
+    ];
+    window.localStorage.setItem(STORAGE_KEYS.feedback, JSON.stringify(next));
+    setSavedFeedbackCount(next.length);
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? { ...message, feedback: "same" as const }
+          : message,
+      ),
+    );
+  };
+
+  const saveDifferentFeedback = () => {
+    if (!feedbackDraft) return;
+    const saved = readStoredValue<Record<string, unknown>[]>(
+      STORAGE_KEYS.feedback,
+      [],
+    );
+    const next = [
+      ...saved,
+      {
+        messageId: feedbackDraft.messageId,
+        value: "different",
+        reasons: feedbackDraft.reasons,
+        note: feedbackDraft.note.trim(),
+      },
+    ];
+    window.localStorage.setItem(STORAGE_KEYS.feedback, JSON.stringify(next));
+    setSavedFeedbackCount(next.length);
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === feedbackDraft.messageId
+          ? { ...message, feedback: "different" as const }
+          : message,
+      ),
+    );
+    setFeedbackDraft(null);
+  };
+
+  const jumpToLatest = () => {
+    shouldAutoScrollRef.current = true;
+    messagesEndRef.current?.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "end",
+    });
+    setHasUnseen(false);
+  };
+
+  const onScroll = () => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    shouldAutoScrollRef.current = distance < 140;
+    if (distance < 140) setHasUnseen(false);
+  };
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar" aria-label="대화와 Self Model 영역">
+        <div className="brand-block">
+          <div className="brand-mark" aria-hidden="true">
+            Y
+          </div>
+          <div>
+            <strong>YUL AI</strong>
+            <span>Personal Twin Lab</span>
+          </div>
+        </div>
+
+        <motion.button
+          className="new-chat-button pressable"
+          type="button"
+          onClick={startNewChat}
+          whileTap={{ scale: 0.98 }}
+          transition={motionTransition}
+        >
+          <Plus size={17} strokeWidth={2.2} />
+          새 대화
+        </motion.button>
+
+        <nav className="demo-nav" aria-label="Self Model 영역">
+          <p className="eyebrow">나의 여러 모습</p>
+          {DEMO_PROMPTS.map((item) => (
+            <button
+              className="demo-nav-item pressable"
+              type="button"
+              key={item.label}
+              onClick={() => submitMessage(item.prompt)}
+              disabled={isResponding}
+            >
+              <MessageCircleMore size={16} aria-hidden="true" />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <button
+            className="persona-version pressable"
+            type="button"
+            onClick={() => setOpenPanel("inspector")}
+          >
+            <span className="status-dot" aria-hidden="true" />
+            <span>
+              <strong>Self Model v0.5</strong>
+              <small>{savedFeedbackCount}개의 교정 기록</small>
+            </span>
+            <ChevronDown size={15} aria-hidden="true" />
+          </button>
+        </div>
+      </aside>
+
+      <section className="chat-column" aria-label="YUL AI 대화">
+        <header className="topbar">
+          <button
+            type="button"
+            className="icon-button mobile-only pressable"
+            aria-label="메뉴 열기"
+            onClick={() => setOpenPanel("menu")}
+          >
+            <Menu size={20} />
+          </button>
+          <div className="topbar-title">
+            <strong>YUL AI</strong>
+            <span>
+              <i aria-hidden="true" /> Self Model v0.5
+            </span>
+          </div>
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="icon-button pressable"
+              aria-label={theme === "dark" ? "라이트 모드" : "다크 모드"}
+              onClick={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+            >
+              {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
+            </button>
+            <button
+              type="button"
+              className="icon-button pressable"
+              aria-label="Persona 설정 열기"
+              onClick={() => setOpenPanel("settings")}
+            >
+              <Settings2 size={19} />
+            </button>
+            <button
+              type="button"
+              className="icon-button mobile-only pressable"
+              aria-label="적용된 기준 보기"
+              onClick={() => setOpenPanel("inspector")}
+            >
+              <PanelRightOpen size={19} />
+            </button>
+          </div>
+        </header>
+
+        <div className="message-scroll" ref={scrollRef} onScroll={onScroll}>
+          <div className="message-width">
+            {messages.length === 0 ? (
+              <motion.section
+                className="empty-state"
+                initial={{ opacity: 0, scale: 0.985, filter: "blur(6px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                transition={motionTransition}
+              >
+                <div className="hero-mark" aria-hidden="true">
+                  Y
+                </div>
+                <p className="eyebrow">YUL AI · PERSONAL TWIN PROTOTYPE</p>
+                <h1>내 방식으로 같이 생각해볼게.</h1>
+                <p className="hero-description">
+                  말투만 흉내 내는 챗봇이 아니라, 율의 기억·취향·가치관·목표와
+                  판단 기준을 하나의 Self Model로 연결하는 초기 버전이야.
+                </p>
+                <div className="suggestion-list" aria-label="추천 질문">
+                  {DEMO_PROMPTS.slice(0, 3).map((item) => (
+                    <motion.button
+                      className="suggestion-pill pressable"
+                      type="button"
+                      key={item.label}
+                      onClick={() => submitMessage(item.prompt)}
+                      whileTap={{ scale: 0.98 }}
+                      transition={motionTransition}
+                    >
+                      {item.label}
+                      <ArrowUp size={15} aria-hidden="true" />
+                    </motion.button>
+                  ))}
+                </div>
+                <div className="persona-notice">
+                  <Info size={15} aria-hidden="true" />
+                  디자인과 공감은 율을 이루는 여러 영역 중 일부야.
+                </div>
+              </motion.section>
+            ) : (
+              <div className="message-list" aria-busy={isResponding}>
+                <AnimatePresence initial={false}>
+                  {messages.map((message) => (
+                    <motion.article
+                      className={`message message-${message.role}`}
+                      key={message.id}
+                      initial={{ opacity: 0, y: 8, scale: 0.985, filter: "blur(6px)" }}
+                      animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                      exit={{ opacity: 0 }}
+                      transition={motionTransition}
+                      onClick={() =>
+                        message.role === "assistant" && setSelectedMessageId(message.id)
+                      }
+                    >
+                      {message.role === "assistant" && (
+                        <div className="assistant-label">
+                          <span className="mini-mark" aria-hidden="true">
+                            Y
+                          </span>
+                          <strong>YUL AI</strong>
+                          <span>Demo 응답</span>
+                        </div>
+                      )}
+                      <div className="message-content">{message.content}</div>
+
+                      {message.role === "assistant" && message.trace && (
+                        <div className="message-tools">
+                          <button
+                            className="trace-toggle pressable"
+                            type="button"
+                            aria-expanded={expandedTrace === message.id}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setExpandedTrace((value) =>
+                                value === message.id ? null : message.id,
+                              );
+                            }}
+                          >
+                            이 답변에 반영된 나 · {message.trace.traits.length}
+                            <ChevronDown
+                              size={15}
+                              className={
+                                expandedTrace === message.id ? "is-rotated" : ""
+                              }
+                            />
+                          </button>
+
+                          <AnimatePresence initial={false}>
+                            {expandedTrace === message.id && (
+                              <motion.div
+                                className="inline-trace"
+                                initial={{ opacity: 0, height: 0, scale: 0.985 }}
+                                animate={{ opacity: 1, height: "auto", scale: 1 }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={motionTransition}
+                              >
+                                {message.trace.traits.map((trait) => (
+                                  <div className="inline-trait" key={trait}>
+                                    <Check size={14} aria-hidden="true" />
+                                    <span>{TRAIT_CATALOG[trait].title}</span>
+                                  </div>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          <div className="feedback-row" aria-label="답변 평가">
+                            {message.feedback ? (
+                              <span className="feedback-saved">
+                                <Check size={14} aria-hidden="true" />
+                                {message.feedback === "same"
+                                  ? "율 같다고 기록했어"
+                                  : "교정 의견을 저장했어"}
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  className="feedback-button pressable"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    recordSameFeedback(message.id);
+                                  }}
+                                >
+                                  <ThumbsUp size={15} /> 율 같음
+                                </button>
+                                <button
+                                  className="feedback-button pressable"
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setFeedbackDraft({
+                                      messageId: message.id,
+                                      reasons: [],
+                                      note: "",
+                                    });
+                                  }}
+                                >
+                                  조금 다름
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </motion.article>
+                  ))}
+                </AnimatePresence>
+
+                {isResponding && (
+                  <motion.div
+                    className="matching-state"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={motionTransition}
+                    role="status"
+                  >
+                    <span className="mini-mark" aria-hidden="true">
+                      Y
+                    </span>
+                    <span className="matching-dots" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    관련된 기억과 기준을 연결하고 있어
+                  </motion.div>
+                )}
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {hasUnseen && (
+            <motion.button
+              className="new-answer-button pressable"
+              type="button"
+              onClick={jumpToLatest}
+              initial={{ opacity: 0, y: 12, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={motionTransition}
+            >
+              <ArrowDown size={15} /> 새 답변 보기
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        <div className="composer-zone">
+          <form className="composer" onSubmit={handleSubmit}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              placeholder="율에게 물어보기"
+              aria-label="YUL AI에게 보낼 메시지"
+              rows={1}
+              disabled={isResponding}
+            />
+            <motion.button
+              className="send-button pressable"
+              type={isResponding ? "button" : "submit"}
+              aria-label={isResponding ? "응답 중지" : "메시지 보내기"}
+              disabled={!isResponding && !input.trim()}
+              onClick={isResponding ? stopResponse : undefined}
+              whileTap={{ scale: 0.9 }}
+              transition={motionTransition}
+            >
+              {isResponding ? (
+                <Square size={15} fill="currentColor" />
+              ) : (
+                <ArrowUp size={19} />
+              )}
+            </motion.button>
+          </form>
+          <p className="composer-caption">
+            현재 Self Model은 확인된 정보만 사용해. 중요한 결정은 실제 율에게 확인해줘.
+          </p>
+        </div>
+      </section>
+
+      <aside className="inspector desktop-inspector" aria-label="적용된 Self Model">
+        <InspectorContent
+          message={selectedAssistant}
+          feedbackCount={savedFeedbackCount}
+        />
+      </aside>
+
+      <AnimatePresence>
+        {openPanel && (
+          <PanelOverlay
+            panel={openPanel}
+            onClose={() => setOpenPanel(null)}
+            transition={motionTransition}
+          >
+            {openPanel === "menu" && (
+              <MobileMenu
+                isResponding={isResponding}
+                onPrompt={(prompt) => {
+                  setOpenPanel(null);
+                  submitMessage(prompt);
+                }}
+                onNewChat={startNewChat}
+              />
+            )}
+            {openPanel === "inspector" && (
+              <InspectorContent
+                message={selectedAssistant}
+                feedbackCount={savedFeedbackCount}
+              />
+            )}
+            {openPanel === "settings" && (
+              <SettingsContent settings={settings} onChange={setSettings} />
+            )}
+          </PanelOverlay>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {feedbackDraft && (
+          <FeedbackOverlay
+            draft={feedbackDraft}
+            onChange={setFeedbackDraft}
+            onClose={() => setFeedbackDraft(null)}
+            onSave={saveDifferentFeedback}
+            transition={motionTransition}
+          />
+        )}
+      </AnimatePresence>
+    </main>
+  );
+}
+
+function InspectorContent({
+  message,
+  feedbackCount,
+}: {
+  message?: ChatMessage;
+  feedbackCount: number;
+}) {
+  return (
+    <div className="inspector-content">
+      <div className="panel-heading">
+        <p className="eyebrow">SELF MODEL INSPECTOR</p>
+        <h2>이 답변에 반영된 나</h2>
+        <p>생각 과정을 공개하는 대신, 연결된 영역과 확인된 율의 특징을 보여줘.</p>
+      </div>
+
+      {message?.trace ? (
+        <>
+          <div className="trace-summary">
+            <span className="trace-domain">{message.trace.domainLabel}</span>
+            <span className="trace-intent">{message.trace.intentLabel}</span>
+            <span>{message.trace.evidenceLabel}</span>
+          </div>
+          <div className="trait-stack">
+            {message.trace.traits.map((trait) => (
+              <article className="trait-card" key={trait}>
+                <div className="trait-check" aria-hidden="true">
+                  <Check size={14} />
+                </div>
+                <div>
+                  <h3>{TRAIT_CATALOG[trait].title}</h3>
+                  <p>{TRAIT_CATALOG[trait].description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="inspector-empty">
+          <div className="self-model-map">
+            {SELF_MODEL_AREAS.map(([name, description]) => (
+              <div className="self-model-area" key={name}>
+                <strong>{name}</strong>
+                <span>{description}</span>
+              </div>
+            ))}
+          </div>
+          <p>질문에 따라 필요한 영역만 연결해 답해. 아직 확인되지 않은 모습은 빈칸으로 남겨둬.</p>
+        </div>
+      )}
+
+      <div className="learning-card">
+        <div>
+          <span>Local 교정 기록</span>
+          <strong>{feedbackCount}</strong>
+        </div>
+        <p>
+          이 기기에만 저장돼. 아직 실제 모델을 학습했다고 과장하지 않고, 다음
+          Self Model 수정의 근거로 사용해.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SettingsContent({
+  settings,
+  onChange,
+}: {
+  settings: PersonaSettings;
+  onChange: (next: PersonaSettings) => void;
+}) {
+  const controls: Array<{
+    key: keyof PersonaSettings;
+    label: string;
+    description: string;
+  }> = [
+    { key: "honesty", label: "솔직함", description: "결론을 얼마나 분명하게 말할지" },
+    {
+      key: "talkativeness",
+      label: "말 많음",
+      description: "설명과 대화의 밀도를 조절해",
+    },
+    { key: "empathy", label: "감정 공감", description: "해결보다 듣기를 얼마나 앞세울지" },
+    {
+      key: "designPriority",
+      label: "디자인 우선",
+      description: "기능과 미감이 충돌할 때의 무게야",
+    },
+  ];
+
+  return (
+    <div className="settings-content">
+      <div className="panel-heading">
+        <p className="eyebrow">RESPONSE TUNING</p>
+        <h2>표현 강도</h2>
+        <p>말하는 방식만 조절해. 율의 기억·가치관·정체성을 바꾸지는 않아.</p>
+      </div>
+      <div className="slider-stack">
+        {controls.map((control) => (
+          <label className="slider-row" key={control.key}>
+            <span>
+              <strong>{control.label}</strong>
+              <small>{control.description}</small>
+            </span>
+            <output>{settings[control.key]}</output>
+            <input
+              type="range"
+              min="20"
+              max="100"
+              value={settings[control.key]}
+              onChange={(event) =>
+                onChange({
+                  ...settings,
+                  [control.key]: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        className="reset-settings pressable"
+        onClick={() => onChange(DEFAULT_SETTINGS)}
+      >
+        <RotateCcw size={16} /> 기본값으로 되돌리기
+      </button>
+    </div>
+  );
+}
+
+function MobileMenu({
+  onPrompt,
+  onNewChat,
+  isResponding,
+}: {
+  onPrompt: (prompt: string) => void;
+  onNewChat: () => void;
+  isResponding: boolean;
+}) {
+  return (
+    <div className="mobile-menu-content">
+      <div className="panel-heading">
+        <p className="eyebrow">YUL AI</p>
+        <h2>Personal Twin Lab</h2>
+        <p>기억·취향·가치관·목표와 말투를 연결하는 율 기반 Self Model이야.</p>
+      </div>
+      <button className="new-chat-button pressable" type="button" onClick={onNewChat}>
+        <Plus size={17} /> 새 대화
+      </button>
+      <div className="mobile-prompt-list">
+        <p className="eyebrow">나의 여러 모습</p>
+        {DEMO_PROMPTS.map((item) => (
+          <button
+            type="button"
+            className="mobile-prompt pressable"
+            key={item.label}
+            onClick={() => onPrompt(item.prompt)}
+            disabled={isResponding}
+          >
+            <span>{item.label}</span>
+            <ArrowUp size={15} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PanelOverlay({
+  children,
+  panel,
+  onClose,
+  transition,
+}: {
+  children: React.ReactNode;
+  panel: string;
+  onClose: () => void;
+  transition: { duration: number } | { type: "spring"; stiffness: number; damping: number; mass: number };
+}) {
+  return (
+    <motion.div
+      className="overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <motion.section
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={panel === "settings" ? "Persona 설정" : "Persona 정보"}
+        initial={{ opacity: 0, y: 28, scale: 0.97, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+        exit={{ opacity: 0, y: 18, scale: 0.98 }}
+        transition={transition}
+      >
+        <div className="sheet-reflection" aria-hidden="true" />
+        <button
+          className="sheet-close icon-button pressable"
+          type="button"
+          onClick={onClose}
+          aria-label="닫기"
+          autoFocus
+        >
+          <X size={19} />
+        </button>
+        {children}
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function FeedbackOverlay({
+  draft,
+  onChange,
+  onClose,
+  onSave,
+  transition,
+}: {
+  draft: FeedbackDraft;
+  onChange: (next: FeedbackDraft) => void;
+  onClose: () => void;
+  onSave: () => void;
+  transition: { duration: number } | { type: "spring"; stiffness: number; damping: number; mass: number };
+}) {
+  const toggleReason = (reason: string) => {
+    onChange({
+      ...draft,
+      reasons: draft.reasons.includes(reason)
+        ? draft.reasons.filter((item) => item !== reason)
+        : [...draft.reasons, reason],
+    });
+  };
+
+  return (
+    <motion.div
+      className="overlay feedback-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <motion.section
+        className="feedback-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="YUL AI 답변 교정"
+        initial={{ opacity: 0, y: 26, scale: 0.97, filter: "blur(8px)" }}
+        animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+        exit={{ opacity: 0, y: 14, scale: 0.98 }}
+        transition={transition}
+      >
+        <button
+          className="sheet-close icon-button pressable"
+          type="button"
+          onClick={onClose}
+          aria-label="닫기"
+          autoFocus
+        >
+          <X size={19} />
+        </button>
+        <div className="panel-heading">
+          <p className="eyebrow">PERSONA FEEDBACK</p>
+          <h2>어떤 부분이 달랐어?</h2>
+          <p>실제 학습 완료라고 과장하지 않고, 다음 Persona 수정의 근거로 저장할게.</p>
+        </div>
+        <div className="reason-grid">
+          {FEEDBACK_REASONS.map((reason) => {
+            const selected = draft.reasons.includes(reason);
+            return (
+              <button
+                type="button"
+                className={`reason-chip pressable ${selected ? "is-selected" : ""}`}
+                key={reason}
+                onClick={() => toggleReason(reason)}
+                aria-pressed={selected}
+              >
+                {selected && <Check size={14} />}
+                {reason}
+              </button>
+            );
+          })}
+        </div>
+        <label className="feedback-note">
+          <span>직접 알려주기</span>
+          <textarea
+            value={draft.note}
+            onChange={(event) => onChange({ ...draft, note: event.target.value })}
+            placeholder="예: 나는 이럴 때 먼저 이유를 물어봐"
+            rows={3}
+          />
+        </label>
+        <button
+          type="button"
+          className="save-feedback pressable"
+          onClick={onSave}
+          disabled={!draft.reasons.length && !draft.note.trim()}
+        >
+          다음 수정에 참고하도록 저장
+        </button>
+      </motion.section>
+    </motion.div>
+  );
+}
