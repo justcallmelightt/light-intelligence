@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
     requestHeaders.get("x-forwarded-proto") ??
     (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "YUL AI — Personal Twin Lab";
+  const title = "Light Intelligence — Personal AI";
   const description =
     "율의 기억, 취향, 가치관, 목표와 판단 기준을 연결하는 Local Self Model Demo.";
 
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${origin}/og.png`,
           width: 1664,
           height: 936,
-          alt: "YUL AI Personal Twin Lab",
+          alt: "Light Intelligence Personal AI",
         },
       ],
     },

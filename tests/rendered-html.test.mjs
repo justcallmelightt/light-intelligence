@@ -23,14 +23,14 @@ async function render() {
   );
 }
 
-test("renders the finished YUL AI Personal Twin Lab", async () => {
+test("renders the finished Light Intelligence Personal AI", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="ko"/i);
-  assert.match(html, /<title>YUL AI — Personal Twin Lab<\/title>/i);
+  assert.match(html, /<title>Light Intelligence — Personal AI<\/title>/i);
   assert.match(html, /내 방식으로 같이 생각해볼게\./);
   assert.match(html, /Self Model v0\.5/);
   assert.match(html, /디자인과 공감은 율을 이루는 여러 영역 중 일부/);
@@ -55,6 +55,12 @@ test("keeps Persona evidence and privacy guardrails explicit", async () => {
   assert.match(page, /율 같음/);
   assert.match(page, /조금 다름/);
   assert.match(page, /localStorage/);
+  assert.match(page, /WikiWorkspace/);
+  const wiki = await readFile(new URL("../app/wiki-workspace.tsx", import.meta.url), "utf8");
+  assert.match(wiki, /light-intelligence:wiki:v1/);
+  assert.match(wiki, /율 위키/);
+  assert.match(wiki, /나만 보기/);
+  assert.match(wiki, /문서 저장/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /safe-area-inset-bottom/);
   assert.match(css, /font-synthesis:\s*none/);

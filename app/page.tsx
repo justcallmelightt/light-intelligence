@@ -12,6 +12,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowDown,
   ArrowUp,
+  BookOpen,
   Check,
   ChevronDown,
   Info,
@@ -27,6 +28,7 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react";
+import WikiWorkspace from "./wiki-workspace";
 import {
   getPersonaResponse,
   TRAIT_CATALOG,
@@ -102,10 +104,10 @@ const SELF_MODEL_AREAS = [
 ] as const;
 
 const STORAGE_KEYS = {
-  messages: "yul-ai-demo:messages",
-  settings: "yul-ai-demo:settings",
-  feedback: "yul-ai-demo:feedback",
-  theme: "yul-ai-demo:theme",
+  messages: "light-intelligence:messages",
+  settings: "light-intelligence:settings",
+  feedback: "light-intelligence:feedback",
+  theme: "light-intelligence:theme",
 };
 
 const createId = () =>
@@ -142,6 +144,7 @@ export default function Home() {
     useState<FeedbackDraft | null>(null);
   const [savedFeedbackCount, setSavedFeedbackCount] = useState(0);
   const [hasUnseen, setHasUnseen] = useState(false);
+  const [workspace, setWorkspace] = useState<"chat" | "wiki">("chat");
 
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -285,6 +288,7 @@ export default function Home() {
     setExpandedTrace(null);
     setHasUnseen(false);
     setOpenPanel(null);
+    setWorkspace("chat");
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
@@ -357,11 +361,11 @@ export default function Home() {
       <aside className="sidebar" aria-label="대화와 Self Model 영역">
         <div className="brand-block">
           <div className="brand-mark" aria-hidden="true">
-            Y
+            L
           </div>
           <div>
-            <strong>YUL AI</strong>
-            <span>Personal Twin Lab</span>
+            <strong>Light Intelligence</strong>
+            <span>Personal AI</span>
           </div>
         </div>
 
@@ -375,6 +379,15 @@ export default function Home() {
           <Plus size={17} strokeWidth={2.2} />
           새 대화
         </motion.button>
+
+        <button
+          className={`wiki-nav-button pressable ${workspace === "wiki" ? "is-active" : ""}`}
+          type="button"
+          onClick={() => setWorkspace("wiki")}
+        >
+          <BookOpen size={17} />
+          율 위키
+        </button>
 
         <nav className="demo-nav" aria-label="Self Model 영역">
           <p className="eyebrow">나의 여러 모습</p>
@@ -408,7 +421,10 @@ export default function Home() {
         </div>
       </aside>
 
-      <section className="chat-column" aria-label="YUL AI 대화">
+      {workspace === "wiki" ? (
+        <WikiWorkspace />
+      ) : (
+      <section className="chat-column" aria-label="Light Intelligence 대화">
         <header className="topbar">
           <button
             type="button"
@@ -419,7 +435,7 @@ export default function Home() {
             <Menu size={20} />
           </button>
           <div className="topbar-title">
-            <strong>YUL AI</strong>
+            <strong>Light Intelligence</strong>
             <span>
               <i aria-hidden="true" /> Self Model v0.5
             </span>
@@ -462,9 +478,9 @@ export default function Home() {
                 transition={motionTransition}
               >
                 <div className="hero-mark" aria-hidden="true">
-                  Y
+                  L
                 </div>
-                <p className="eyebrow">YUL AI · PERSONAL TWIN PROTOTYPE</p>
+                <p className="eyebrow">LIGHT INTELLIGENCE · PERSONAL AI</p>
                 <h1>내 방식으로 같이 생각해볼게.</h1>
                 <p className="hero-description">
                   말투만 흉내 내는 챗봇이 아니라, 율의 기억·취향·가치관·목표와
@@ -508,9 +524,9 @@ export default function Home() {
                       {message.role === "assistant" && (
                         <div className="assistant-label">
                           <span className="mini-mark" aria-hidden="true">
-                            Y
+                            L
                           </span>
-                          <strong>YUL AI</strong>
+                          <strong>Light Intelligence</strong>
                           <span>Demo 응답</span>
                         </div>
                       )}
@@ -649,7 +665,7 @@ export default function Home() {
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               placeholder="율에게 물어보기"
-              aria-label="YUL AI에게 보낼 메시지"
+              aria-label="Light Intelligence에게 보낼 메시지"
               rows={1}
               disabled={isResponding}
             />
@@ -674,12 +690,27 @@ export default function Home() {
           </p>
         </div>
       </section>
+      )}
 
-      <aside className="inspector desktop-inspector" aria-label="적용된 Self Model">
+      <aside className={`inspector desktop-inspector ${workspace === "wiki" ? "wiki-side-info" : ""}`} aria-label={workspace === "wiki" ? "위키 저장 안내" : "적용된 Self Model"}>
+        {workspace === "wiki" ? (
+          <div className="inspector-content">
+            <div className="panel-heading">
+              <p className="eyebrow">PRIVATE BY DEFAULT</p>
+              <h2>나를 아는 기준점</h2>
+              <p>추측이 아니라 율이 직접 확인한 문서를 기준으로 쌓는 개인 지식 공간이야.</p>
+            </div>
+            <div className="learning-card wiki-local-card">
+              <div><span>저장 위치</span><strong>Local</strong></div>
+              <p>현재 문서는 이 브라우저에만 저장돼. 다른 기기나 외부 AI에는 자동으로 공유되지 않아.</p>
+            </div>
+          </div>
+        ) : (
         <InspectorContent
           message={selectedAssistant}
           feedbackCount={savedFeedbackCount}
         />
+        )}
       </aside>
 
       <AnimatePresence>
@@ -697,6 +728,10 @@ export default function Home() {
                   submitMessage(prompt);
                 }}
                 onNewChat={startNewChat}
+                onOpenWiki={() => {
+                  setOpenPanel(null);
+                  setWorkspace("wiki");
+                }}
               />
             )}
             {openPanel === "inspector" && (
@@ -862,20 +897,25 @@ function MobileMenu({
   onPrompt,
   onNewChat,
   isResponding,
+  onOpenWiki,
 }: {
   onPrompt: (prompt: string) => void;
   onNewChat: () => void;
   isResponding: boolean;
+  onOpenWiki: () => void;
 }) {
   return (
     <div className="mobile-menu-content">
       <div className="panel-heading">
-        <p className="eyebrow">YUL AI</p>
-        <h2>Personal Twin Lab</h2>
+        <p className="eyebrow">Light Intelligence</p>
+        <h2>Personal AI</h2>
         <p>기억·취향·가치관·목표와 말투를 연결하는 율 기반 Self Model이야.</p>
       </div>
       <button className="new-chat-button pressable" type="button" onClick={onNewChat}>
         <Plus size={17} /> 새 대화
+      </button>
+      <button className="wiki-nav-button mobile-wiki-button pressable" type="button" onClick={onOpenWiki}>
+        <BookOpen size={17} /> 율 위키 열기
       </button>
       <div className="mobile-prompt-list">
         <p className="eyebrow">나의 여러 모습</p>
@@ -977,7 +1017,7 @@ function FeedbackOverlay({
         className="feedback-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="YUL AI 답변 교정"
+        aria-label="Light Intelligence 답변 교정"
         initial={{ opacity: 0, y: 26, scale: 0.97, filter: "blur(8px)" }}
         animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
         exit={{ opacity: 0, y: 14, scale: 0.98 }}
