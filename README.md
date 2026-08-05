@@ -1,5 +1,10 @@
 # Light Intelligence — Personal AI
 
+![React 19](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Next.js 16](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+
+
 ### 개발자 테스트중
 
 `Light Intelligence`는 율의 별명인 **빛**에서 가져온 이름입니다. 율이 직접 확인한
