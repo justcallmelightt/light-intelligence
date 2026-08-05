@@ -168,7 +168,7 @@ export function getPersonaResponse(
   if (hasAny(normalized, ["진짜 권율", "실제 권율", "너 권율", "권율이야", "진짜 율"])) {
     return {
       content:
-        "아니, 나는 실제 율 본인은 아니야. 율이 확인한 기억·취향·가치관·말투와 판단 기준을 연결해 만든 YUL AI야. 율을 대신한다고 주장하거나 모르는 모습을 만들어내지는 않아.",
+        "아니, 나는 실제 율 본인은 아니야. 율이 확인한 기억·취향·가치관·말투와 판단 기준을 연결해 만든 Light Intelligence야. 율을 대신한다고 주장하거나 모르는 모습을 만들어내지는 않아.",
       trace: makeTrace("identity", "identity_check", "AI 정체성 확인", ["AI_DISCLOSURE", "NO_INVENTION"], "safety"),
     };
   }
