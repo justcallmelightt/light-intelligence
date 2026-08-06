@@ -42,6 +42,7 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  source?: "gemini" | "local";
   trace?: PersonaTrace;
   feedback?: FeedbackValue;
 };
@@ -146,7 +147,7 @@ export default function Home() {
   const [hasUnseen, setHasUnseen] = useState(false);
   const [workspace, setWorkspace] = useState<"chat" | "wiki">("chat");
 
-  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const responseControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -203,7 +204,7 @@ export default function Home() {
 
   useEffect(
     () => () => {
-      if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
+      responseControllerRef.current?.abort();
     },
     [],
   );
@@ -233,7 +234,7 @@ export default function Home() {
     ? { duration: 0.15 }
     : { type: "spring" as const, stiffness: 420, damping: 41, mass: 1 };
 
-  const submitMessage = (rawValue?: string) => {
+  const submitMessage = async (rawValue?: string) => {
     const content = (rawValue ?? input).trim();
     if (!content || isResponding) return;
 
@@ -243,24 +244,78 @@ export default function Home() {
       content,
     };
 
-    setMessages((current) => [...current, userMessage]);
+    const conversation = [...messages, userMessage].slice(-16);
+    setMessages(conversation);
     setInput("");
     setIsResponding(true);
     shouldAutoScrollRef.current = true;
 
-    replyTimerRef.current = setTimeout(() => {
-      const result = getPersonaResponse(content, settings);
+    const localResult = getPersonaResponse(content, settings);
+    const assistantId = createId();
+    const controller = new AbortController();
+    responseControllerRef.current = controller;
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: conversation.map(({ role, content: messageContent }) => ({
+            role,
+            content: messageContent,
+          })),
+          settings,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) throw new Error("Gemini unavailable");
+
       const assistantMessage: ChatMessage = {
-        id: createId(),
+        id: assistantId,
         role: "assistant",
-        content: result.content,
-        trace: result.trace,
+        content: "",
+        source: "gemini",
+        trace: localResult.trace,
       };
       setMessages((current) => [...current, assistantMessage]);
-      setSelectedMessageId(assistantMessage.id);
-      setIsResponding(false);
-      replyTimerRef.current = null;
-    }, reduceMotion ? 120 : 520);
+      setSelectedMessageId(assistantId);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantId
+              ? { ...message, content: `${message.content}${chunk}` }
+              : message,
+          ),
+        );
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const assistantMessage: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        content: localResult.content,
+        source: "local",
+        trace: localResult.trace,
+      };
+      setMessages((current) => {
+        const withoutPartial = current.filter((message) => message.id !== assistantId);
+        return [...withoutPartial, assistantMessage];
+      });
+      setSelectedMessageId(assistantId);
+      console.info("Gemini is unavailable; using the local persona engine.", error);
+    } finally {
+      if (responseControllerRef.current === controller) {
+        responseControllerRef.current = null;
+        setIsResponding(false);
+      }
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -276,8 +331,8 @@ export default function Home() {
   };
 
   const stopResponse = () => {
-    if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
-    replyTimerRef.current = null;
+    responseControllerRef.current?.abort();
+    responseControllerRef.current = null;
     setIsResponding(false);
   };
 
@@ -527,7 +582,11 @@ export default function Home() {
                             L
                           </span>
                           <strong>Light Intelligence</strong>
-                          <span>Demo 응답</span>
+                          <span>
+                            {message.source === "gemini"
+                              ? "Gemini · AI 응답"
+                              : "Local fallback"}
+                          </span>
                         </div>
                       )}
                       <div className="message-content">{message.content}</div>
@@ -686,7 +745,7 @@ export default function Home() {
             </motion.button>
           </form>
           <p className="composer-caption">
-            현재 Self Model은 확인된 정보만 사용해. 중요한 결정은 실제 율에게 확인해줘.
+            Gemini 사용 시 대화가 Google로 전송돼. Local 위키는 자동으로 보내지 않아.
           </p>
         </div>
       </section>

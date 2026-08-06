@@ -13,6 +13,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4.0.36",
+    "ai": "^7.0.55",
     "lucide-react": "^1.25.0",
     "motion": "^12.42.2",
     "next": "16.2.6",
