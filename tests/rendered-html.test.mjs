@@ -38,10 +38,13 @@ test("renders the finished Light Intelligence Personal AI", async () => {
 });
 
 test("keeps Persona evidence and privacy guardrails explicit", async () => {
-  const [engine, page, css] = await Promise.all([
+  const [engine, page, css, route, systemPrompt, readme] = await Promise.all([
     readFile(new URL("../app/persona-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/ai/system-prompt.ts", import.meta.url), "utf8"),
+    readFile(new URL("../README.md", import.meta.url), "utf8"),
   ]);
 
   assert.match(engine, /INTEGRATED_MAKER/);
@@ -56,6 +59,15 @@ test("keeps Persona evidence and privacy guardrails explicit", async () => {
   assert.match(page, /조금 다름/);
   assert.match(page, /localStorage/);
   assert.match(page, /WikiWorkspace/);
+  assert.match(page, /fetch\("\/api\/chat"/);
+  assert.match(page, /source: "local"/);
+  assert.match(page, /Local 위키는 자동으로 보내지 않아/);
+  assert.match(route, /GOOGLE_GENERATIVE_AI_API_KEY/);
+  assert.match(route, /gemini-3\.6-flash/);
+  assert.match(route, /toTextStreamResponse/);
+  assert.match(systemPrompt, /실제 권율 본인이 아니라/);
+  assert.match(systemPrompt, /확인되지 않은 율의 경험/);
+  assert.match(readme, /Google 제품 개선에 사용될 수 있으므로/);
   const wiki = await readFile(new URL("../app/wiki-workspace.tsx", import.meta.url), "utf8");
   assert.match(wiki, /light-intelligence:wiki:v1/);
   assert.match(wiki, /율 위키/);

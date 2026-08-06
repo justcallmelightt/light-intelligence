@@ -11,13 +11,15 @@
 기억, 취향, 가치관, 목표, 말투와 판단 방식을 연결해 다양한 상황에서 율의 방식으로
 함께 생각하는 Personal AI를 실험합니다.
 이 프로젝트는 실제 율 본인이 아니며, 율을 완벽하게 대체한다고 주장하지 않습니다.
-새로운 Foundation Model을 학습한 제품도 아닙니다. 현재 버전은 브라우저에서
-동작하는 Local Persona Engine으로, 확인된 기준과 반응 예시를 조합해 답변합니다.
+새로운 Foundation Model을 학습한 제품도 아닙니다. 현재 버전은 Google Gemini의
+무료 Tier와 서버 측 System Prompt를 사용하고, 연결할 수 없을 때는 브라우저의
+Local Persona Engine으로 안전하게 전환합니다.
 
 ## 주요 기능
 
+- Gemini 3.6 Flash 기반 Streaming AI 대화와 Local Persona 자동 Fallback
 - 자기 이해, 일상, 취향과 선택, 진로와 성장, 창업, 프로젝트, 관계와 감정,
-  개발과 디자인 등 여러 맥락에 대한 Local Persona 응답
+  개발과 디자인 등 여러 맥락에 대한 율 기반 응답
 - 답변에 사용한 Self Model 영역, 판단 기준과 근거 수준 표시
 - `율 같음`과 `조금 다름` 피드백 및 구체적인 교정 의견 기록
 - 솔직함, 말 많음, 감정 공감과 디자인 우선 성격 강도 조절
@@ -32,6 +34,7 @@
 ## 기술 스택
 
 - **Frontend:** Next.js 16, React 19, TypeScript 5
+- **AI:** Vercel AI SDK, Google Gemini 3.6 Flash, Server-side System Prompt
 - **UI & Motion:** CSS, Motion, Lucide React
 - **Build & Runtime:** Vinext, Vite 8, Cloudflare Workers 호환 Runtime
 - **Quality:** ESLint, Node.js Test Runner, TypeScript Type Check
@@ -39,10 +42,17 @@
 
 ## 개인정보 보호 및 보안
 
-- 현재 버전의 대화, 설정, 교정 기록과 위키 문서는 사용 중인 브라우저의
-  `localStorage`에만 저장되며 별도 서버로 전송하지 않습니다.
+- 대화 기록, 설정, 교정 기록과 위키 문서는 사용 중인 브라우저의
+  `localStorage`에 저장됩니다.
+- Gemini가 설정된 경우 AI 답변을 만들기 위해 현재 대화의 최근 메시지와 표현 강도
+  설정을 Google Gemini API로 전송합니다.
+- Local 위키와 교정 기록은 Gemini에 자동으로 전송하지 않습니다.
 - 위키 문서마다 `나만 보기`와 `친한 사람` 공개 범위를 기록할 수 있습니다.
-- 외부 LLM API와 연결되어 있지 않아 API Key를 요구하거나 Client에 노출하지 않습니다.
+- Gemini API Key는 Server 환경 변수에서만 읽으며 Client Bundle에 포함하지 않습니다.
+- Chat API는 동일 출처 요청만 허용하고, 입력 길이와 최근 대화 수를 제한하며,
+  과도한 호출에는 기본 Rate Limit을 적용합니다.
+- Google의 무료 Tier 정책상 전송한 콘텐츠가 Google 제품 개선에 사용될 수 있으므로,
+  민감한 개인정보나 Secret은 대화에 입력하지 않는 것을 원칙으로 합니다.
 - 실제 권율 본인으로 가장하지 않고, 율을 기반으로 만든 AI Persona임을 명확히 밝힙니다.
 - 확인되지 않은 기억, 감정, 취향과 개인정보를 사실처럼 생성하지 않습니다.
 - 민감한 개인정보 요청에는 답변하지 않으며, 공개된 저장소에 Secret이나 개인 인증
@@ -55,8 +65,12 @@ Node.js 22.13 이상이 필요합니다.
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
+
+`.env.local`의 `GOOGLE_GENERATIVE_AI_API_KEY`에 Google AI Studio에서 발급한 Key를
+입력합니다. Key가 없거나 무료 사용량을 초과해도 Local Persona Engine으로 동작합니다.
 
 브라우저에서 출력된 Local URL을 엽니다.
 
@@ -70,7 +84,8 @@ npm test
 
 ## 현재 한계
 
-- 외부 LLM과 연결되지 않은 Local Demo입니다.
+- Gemini API Key가 없으면 답변은 Local Persona Engine의 규칙 기반 범위로 제한됩니다.
+- 무료 Tier의 Rate Limit과 이용 정책은 Google 계정과 지역에 따라 달라질 수 있습니다.
 - 위키의 공개 범위는 현재 분류용이며 사용자 인증이나 실제 접근 제어는 아닙니다.
 - 위키와 교정 기록은 현재 브라우저에만 저장되어 다른 기기와 동기화되지 않습니다.
 - 교정 의견은 실제 모델을 즉시 학습하지 않습니다.
