@@ -1454,6 +1454,69 @@ button:not(:disabled) {
   word-break: keep-all;
 }
 
+.example-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.example-card {
+  padding: 12px 13px;
+  border: 1px solid var(--hairline);
+  border-top-color: color-mix(in srgb, var(--reflection) 34%, var(--hairline));
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.example-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.example-card-head > span {
+  color: var(--focus);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.012em;
+}
+
+.example-delete {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.example-card p,
+.example-card strong {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 5px 0 0;
+  line-height: 1.45;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.example-card p {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.example-card strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 610;
+}
+
 .overlay {
   position: fixed;
   z-index: 30;
@@ -1634,6 +1697,39 @@ button:not(:disabled) {
   margin-top: 24px;
 }
 
+.feedback-context {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.feedback-context > div {
+  padding: 12px 13px;
+  border: 1px solid var(--hairline);
+  border-top-color: color-mix(in srgb, var(--reflection) 36%, var(--hairline));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.feedback-context span {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.015em;
+}
+
+.feedback-context p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .reason-chip {
   display: inline-flex;
   min-height: 38px;
@@ -1671,6 +1767,24 @@ button:not(:disabled) {
   font-weight: 620;
 }
 
+.feedback-note span b {
+  margin-left: 4px;
+  color: var(--focus);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.feedback-note span small {
+  margin-left: 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 560;
+}
+
+.feedback-note-secondary {
+  margin-top: 12px;
+}
+
 .feedback-note textarea {
   width: 100%;
   resize: vertical;
@@ -1682,6 +1796,12 @@ button:not(:disabled) {
   padding: 12px;
   font-size: 13px;
   line-height: 1.55;
+}
+
+.feedback-note textarea:focus {
+  border-color: color-mix(in srgb, var(--focus) 58%, var(--hairline));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 11%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--reflection) 18%, transparent);
 }
 
 .feedback-note textarea::placeholder {
@@ -1708,6 +1828,7 @@ button:not(:disabled) {
   .icon-button:hover,
   .trace-toggle:hover,
   .feedback-button:hover,
+  .example-delete:hover,
   .mobile-prompt:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
