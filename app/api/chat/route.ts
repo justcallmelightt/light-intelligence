@@ -1,6 +1,11 @@
 import { google } from "@ai-sdk/google";
 import { streamText, type ModelMessage } from "ai";
 import { buildSystemPrompt } from "../../ai/system-prompt";
+import {
+  MAX_INJECTED_PERSONA_EXAMPLES,
+  MAX_PERSONA_EXAMPLES,
+  type PersonaExample,
+} from "../../ai/persona-examples";
 import type { PersonaSettings } from "../../persona-engine";
 
 export const maxDuration = 30;
@@ -8,6 +13,9 @@ export const maxDuration = 30;
 const MAX_MESSAGES = 16;
 const MAX_MESSAGE_LENGTH = 4_000;
 const MAX_TOTAL_LENGTH = 20_000;
+const MAX_EXAMPLE_PROMPT_LENGTH = 1_200;
+const MAX_EXAMPLE_RESPONSE_LENGTH = 2_000;
+const MAX_EXAMPLE_NOTE_LENGTH = 500;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS = 12;
 const requestBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -66,6 +74,61 @@ const readMessages = (value: unknown): ModelMessage[] | null => {
   return messages.length > 0 ? messages : null;
 };
 
+const readPersonaExamples = (value: unknown): PersonaExample[] => {
+  if (!Array.isArray(value)) return [];
+
+  const examples: PersonaExample[] = [];
+  for (const item of value.slice(-MAX_PERSONA_EXAMPLES)) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Record<string, unknown>;
+    if (
+      candidate.approved !== true ||
+      (candidate.kind !== "same" && candidate.kind !== "correction") ||
+      typeof candidate.prompt !== "string" ||
+      typeof candidate.response !== "string"
+    ) {
+      continue;
+    }
+
+    const prompt = candidate.prompt.trim().slice(0, MAX_EXAMPLE_PROMPT_LENGTH);
+    const response = candidate.response
+      .trim()
+      .slice(0, MAX_EXAMPLE_RESPONSE_LENGTH);
+    if (!prompt || !response) continue;
+
+    const reasons = Array.isArray(candidate.reasons)
+      ? candidate.reasons
+          .filter((reason): reason is string => typeof reason === "string")
+          .map((reason) => reason.trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+
+    examples.push({
+      id: typeof candidate.id === "string" ? candidate.id.slice(0, 100) : "",
+      messageId:
+        typeof candidate.messageId === "string"
+          ? candidate.messageId.slice(0, 100)
+          : "",
+      kind: candidate.kind,
+      prompt,
+      response,
+      reasons,
+      note:
+        typeof candidate.note === "string"
+          ? candidate.note.trim().slice(0, MAX_EXAMPLE_NOTE_LENGTH)
+          : "",
+      approved: true,
+      createdAt:
+        typeof candidate.createdAt === "string"
+          ? candidate.createdAt.slice(0, 40)
+          : "",
+    });
+  }
+
+  return examples.slice(-MAX_INJECTED_PERSONA_EXAMPLES);
+};
+
 const isSameOrigin = (request: Request) => {
   const origin = request.headers.get("origin");
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
@@ -115,6 +178,7 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const messages = readMessages(body.messages);
+    const personaExamples = readPersonaExamples(body.personaExamples);
     if (!messages) {
       return Response.json(
         { code: "INVALID_REQUEST", message: "A valid conversation is required." },
@@ -124,7 +188,7 @@ export async function POST(request: Request) {
 
     const result = streamText({
       model: google(process.env.GEMINI_MODEL ?? "gemini-3.6-flash"),
-      system: buildSystemPrompt(readSettings(body.settings)),
+      system: buildSystemPrompt(readSettings(body.settings), personaExamples),
       messages,
       temperature: 0.85,
       maxOutputTokens: 1_200,

@@ -26,9 +26,14 @@ import {
   Square,
   Sun,
   ThumbsUp,
+  Trash2,
   X,
 } from "lucide-react";
 import WikiWorkspace from "./wiki-workspace";
+import {
+  MAX_PERSONA_EXAMPLES,
+  type PersonaExample,
+} from "./ai/persona-examples";
 import {
   getPersonaResponse,
   TRAIT_CATALOG,
@@ -49,7 +54,10 @@ type ChatMessage = {
 
 type FeedbackDraft = {
   messageId: string;
+  prompt: string;
+  aiResponse: string;
   reasons: string[];
+  correctedResponse: string;
   note: string;
 };
 
@@ -107,7 +115,7 @@ const SELF_MODEL_AREAS = [
 const STORAGE_KEYS = {
   messages: "light-intelligence:messages",
   settings: "light-intelligence:settings",
-  feedback: "light-intelligence:feedback",
+  personaExamples: "light-intelligence:persona-examples:v1",
   theme: "light-intelligence:theme",
 };
 
@@ -143,7 +151,7 @@ export default function Home() {
   );
   const [feedbackDraft, setFeedbackDraft] =
     useState<FeedbackDraft | null>(null);
-  const [savedFeedbackCount, setSavedFeedbackCount] = useState(0);
+  const [personaExamples, setPersonaExamples] = useState<PersonaExample[]>([]);
   const [hasUnseen, setHasUnseen] = useState(false);
   const [workspace, setWorkspace] = useState<"chat" | "wiki">("chat");
 
@@ -163,12 +171,15 @@ export default function Home() {
       DEFAULT_SETTINGS,
     );
     const storedTheme = window.localStorage.getItem(STORAGE_KEYS.theme);
-    const storedFeedback = readStoredValue<unknown[]>(STORAGE_KEYS.feedback, []);
+    const storedExamples = readStoredValue<PersonaExample[]>(
+      STORAGE_KEYS.personaExamples,
+      [],
+    );
 
     queueMicrotask(() => {
       setMessages(storedMessages);
       setSettings(storedSettings);
-      setSavedFeedbackCount(storedFeedback.length);
+      setPersonaExamples(storedExamples.slice(-MAX_PERSONA_EXAMPLES));
       setTheme(storedTheme === "light" ? "light" : "dark");
       setHydrated(true);
     });
@@ -265,6 +276,7 @@ export default function Home() {
             content: messageContent,
           })),
           settings,
+          personaExamples: personaExamples.slice(-MAX_PERSONA_EXAMPLES),
         }),
         signal: controller.signal,
       });
@@ -348,16 +360,33 @@ export default function Home() {
   };
 
   const recordSameFeedback = (messageId: string) => {
-    const saved = readStoredValue<Record<string, unknown>[]>(
-      STORAGE_KEYS.feedback,
-      [],
-    );
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    const assistantMessage = messages[messageIndex];
+    const userMessage = [...messages.slice(0, messageIndex)]
+      .reverse()
+      .find((message) => message.role === "user");
+    if (!assistantMessage || !userMessage) return;
+
+    const example: PersonaExample = {
+      id: createId(),
+      messageId,
+      kind: "same",
+      prompt: userMessage.content,
+      response: assistantMessage.content,
+      reasons: [],
+      note: "",
+      approved: true,
+      createdAt: new Date().toISOString(),
+    };
     const next = [
-      ...saved,
-      { messageId, value: "same" },
-    ];
-    window.localStorage.setItem(STORAGE_KEYS.feedback, JSON.stringify(next));
-    setSavedFeedbackCount(next.length);
+      ...personaExamples.filter((item) => item.messageId !== messageId),
+      example,
+    ].slice(-MAX_PERSONA_EXAMPLES);
+    window.localStorage.setItem(
+      STORAGE_KEYS.personaExamples,
+      JSON.stringify(next),
+    );
+    setPersonaExamples(next);
     setMessages((current) =>
       current.map((message) =>
         message.id === messageId
@@ -369,21 +398,30 @@ export default function Home() {
 
   const saveDifferentFeedback = () => {
     if (!feedbackDraft) return;
-    const saved = readStoredValue<Record<string, unknown>[]>(
-      STORAGE_KEYS.feedback,
-      [],
-    );
+    const correctedResponse = feedbackDraft.correctedResponse.trim();
+    if (!correctedResponse) return;
+    const example: PersonaExample = {
+      id: createId(),
+      messageId: feedbackDraft.messageId,
+      kind: "correction",
+      prompt: feedbackDraft.prompt,
+      response: correctedResponse,
+      reasons: feedbackDraft.reasons,
+      note: feedbackDraft.note.trim(),
+      approved: true,
+      createdAt: new Date().toISOString(),
+    };
     const next = [
-      ...saved,
-      {
-        messageId: feedbackDraft.messageId,
-        value: "different",
-        reasons: feedbackDraft.reasons,
-        note: feedbackDraft.note.trim(),
-      },
-    ];
-    window.localStorage.setItem(STORAGE_KEYS.feedback, JSON.stringify(next));
-    setSavedFeedbackCount(next.length);
+      ...personaExamples.filter(
+        (item) => item.messageId !== feedbackDraft.messageId,
+      ),
+      example,
+    ].slice(-MAX_PERSONA_EXAMPLES);
+    window.localStorage.setItem(
+      STORAGE_KEYS.personaExamples,
+      JSON.stringify(next),
+    );
+    setPersonaExamples(next);
     setMessages((current) =>
       current.map((message) =>
         message.id === feedbackDraft.messageId
@@ -392,6 +430,25 @@ export default function Home() {
       ),
     );
     setFeedbackDraft(null);
+  };
+
+  const deletePersonaExample = (exampleId: string) => {
+    const target = personaExamples.find((example) => example.id === exampleId);
+    const next = personaExamples.filter((example) => example.id !== exampleId);
+    window.localStorage.setItem(
+      STORAGE_KEYS.personaExamples,
+      JSON.stringify(next),
+    );
+    setPersonaExamples(next);
+    if (target) {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === target.messageId
+            ? { ...message, feedback: undefined }
+            : message,
+        ),
+      );
+    }
   };
 
   const jumpToLatest = () => {
@@ -468,8 +525,8 @@ export default function Home() {
           >
             <span className="status-dot" aria-hidden="true" />
             <span>
-              <strong>Self Model v0.5</strong>
-              <small>{savedFeedbackCount}개의 교정 기록</small>
+              <strong>Self Model v0.6</strong>
+              <small>{personaExamples.length}개의 검토된 예시</small>
             </span>
             <ChevronDown size={15} aria-hidden="true" />
           </button>
@@ -492,7 +549,7 @@ export default function Home() {
           <div className="topbar-title">
             <strong>Light Intelligence</strong>
             <span>
-              <i aria-hidden="true" /> Self Model v0.5
+              <i aria-hidden="true" /> Self Model v0.6
             </span>
           </div>
           <div className="topbar-actions">
@@ -659,7 +716,14 @@ export default function Home() {
                                     event.stopPropagation();
                                     setFeedbackDraft({
                                       messageId: message.id,
+                                      prompt:
+                                        [...messages.slice(0, messages.indexOf(message))]
+                                          .reverse()
+                                          .find((item) => item.role === "user")
+                                          ?.content ?? "",
+                                      aiResponse: message.content,
                                       reasons: [],
+                                      correctedResponse: "",
                                       note: "",
                                     });
                                   }}
@@ -745,7 +809,7 @@ export default function Home() {
             </motion.button>
           </form>
           <p className="composer-caption">
-            Gemini 사용 시 대화가 Google로 전송돼. Local 위키는 자동으로 보내지 않아.
+            대화와 승인한 Persona 예시는 Gemini로 전송돼. Local 위키는 자동으로 보내지 않아.
           </p>
         </div>
       </section>
@@ -767,7 +831,9 @@ export default function Home() {
         ) : (
         <InspectorContent
           message={selectedAssistant}
-          feedbackCount={savedFeedbackCount}
+          feedbackCount={personaExamples.length}
+          examples={personaExamples}
+          onDeleteExample={deletePersonaExample}
         />
         )}
       </aside>
@@ -796,7 +862,9 @@ export default function Home() {
             {openPanel === "inspector" && (
               <InspectorContent
                 message={selectedAssistant}
-                feedbackCount={savedFeedbackCount}
+                feedbackCount={personaExamples.length}
+                examples={personaExamples}
+                onDeleteExample={deletePersonaExample}
               />
             )}
             {openPanel === "settings" && (
@@ -824,9 +892,13 @@ export default function Home() {
 function InspectorContent({
   message,
   feedbackCount,
+  examples,
+  onDeleteExample,
 }: {
   message?: ChatMessage;
   feedbackCount: number;
+  examples: PersonaExample[];
+  onDeleteExample: (exampleId: string) => void;
 }) {
   return (
     <div className="inspector-content">
@@ -873,14 +945,37 @@ function InspectorContent({
 
       <div className="learning-card">
         <div>
-          <span>Local 교정 기록</span>
+          <span>검토된 Persona 예시</span>
           <strong>{feedbackCount}</strong>
         </div>
         <p>
-          이 기기에만 저장돼. 아직 실제 모델을 학습했다고 과장하지 않고, 다음
-          Self Model 수정의 근거로 사용해.
+          이 기기에 저장되고 다음 Gemini 요청에 필요한 예시만 포함돼. Foundation
+          Model 자체를 학습했다고 표현하지 않아.
         </p>
       </div>
+      {examples.length > 0 && (
+        <div className="example-stack" aria-label="검토된 Persona 예시 목록">
+          {[...examples].reverse().slice(0, 5).map((example) => (
+            <article className="example-card" key={example.id}>
+              <div className="example-card-head">
+                <span>
+                  {example.kind === "correction" ? "직접 교정" : "율 같음"}
+                </span>
+                <button
+                  className="example-delete pressable"
+                  type="button"
+                  onClick={() => onDeleteExample(example.id)}
+                  aria-label="이 Persona 예시 삭제"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <p>{example.prompt}</p>
+              <strong>{example.response}</strong>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1031,7 +1126,6 @@ function PanelOverlay({
           type="button"
           onClick={onClose}
           aria-label="닫기"
-          autoFocus
         >
           <X size={19} />
         </button>
@@ -1087,14 +1181,23 @@ function FeedbackOverlay({
           type="button"
           onClick={onClose}
           aria-label="닫기"
-          autoFocus
         >
           <X size={19} />
         </button>
         <div className="panel-heading">
           <p className="eyebrow">PERSONA FEEDBACK</p>
-          <h2>어떤 부분이 달랐어?</h2>
-          <p>실제 학습 완료라고 과장하지 않고, 다음 Persona 수정의 근거로 저장할게.</p>
+          <h2>율이라면 어떻게 답해?</h2>
+          <p>율이 직접 확정한 답변만 검토된 예시로 저장하고, 다음 대화부터 반영할게.</p>
+        </div>
+        <div className="feedback-context" aria-label="교정할 대화">
+          <div>
+            <span>질문</span>
+            <p>{draft.prompt}</p>
+          </div>
+          <div>
+            <span>AI가 답한 방식</span>
+            <p>{draft.aiResponse}</p>
+          </div>
         </div>
         <div className="reason-grid">
           {FEEDBACK_REASONS.map((reason) => {
@@ -1114,21 +1217,35 @@ function FeedbackOverlay({
           })}
         </div>
         <label className="feedback-note">
-          <span>직접 알려주기</span>
+          <span>실제 율의 답변 <b>필수</b></span>
+          <textarea
+            value={draft.correctedResponse}
+            onChange={(event) =>
+              onChange({ ...draft, correctedResponse: event.target.value })
+            }
+            placeholder="예: 왜왜 무슨 일 있었는데?"
+            rows={4}
+            maxLength={2000}
+            autoFocus
+          />
+        </label>
+        <label className="feedback-note feedback-note-secondary">
+          <span>이유나 기준 <small>선택</small></span>
           <textarea
             value={draft.note}
             onChange={(event) => onChange({ ...draft, note: event.target.value })}
-            placeholder="예: 나는 이럴 때 먼저 이유를 물어봐"
-            rows={3}
+            placeholder="예: 힘든 상황에서는 해결보다 먼저 이유를 물어봐"
+            rows={2}
+            maxLength={500}
           />
         </label>
         <button
           type="button"
           className="save-feedback pressable"
           onClick={onSave}
-          disabled={!draft.reasons.length && !draft.note.trim()}
+          disabled={!draft.correctedResponse.trim()}
         >
-          다음 수정에 참고하도록 저장
+          검토된 Persona 예시로 저장
         </button>
       </motion.section>
     </motion.div>
