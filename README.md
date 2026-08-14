@@ -4,6 +4,10 @@
 ![Next.js 16](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 
+> [!CAUTION]
+> `© 2026 Lightframe. All Rights Reserved.` <br>
+> **이 Repository의 모든 파일은 소중한 개인 저작권의 보호를 받습니다. 무단 복제 및 도용을 금지합니다.** <br>
+> **This repository is NOT open source.**
 
 ### 개발자 테스트중
 
