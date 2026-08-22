@@ -1009,6 +1009,9 @@ function InspectorContent({
               : "서버 저장소가 아직 연결되지 않아 이 브라우저에 임시 보관 중이야."} Foundation
           Model 자체를 학습했다고 표현하지 않아.
         </p>
+        <p className="feedback-guide">
+          답변을 받은 뒤 그 아래의 <strong>율 같음</strong> 또는 <strong>조금 다름</strong>을 눌러 기록해.
+        </p>
       </div>
       {examples.length > 0 && (
         <div className="example-stack" aria-label="검토된 Persona 예시 목록">

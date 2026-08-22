@@ -1088,6 +1088,18 @@ button:not(:disabled) {
   font-weight: 600;
 }
 
+.feedback-guide {
+  margin-top: 10px !important;
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+}
+
+.feedback-guide strong {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
 .matching-state {
   display: flex;
   align-items: center;
@@ -1180,7 +1192,7 @@ button:not(:disabled) {
   width: min(100%, 760px);
   min-height: 54px;
   margin: 0 auto;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   padding: 7px 7px 7px 18px;
   border: 1px solid var(--hairline-strong);
@@ -1202,6 +1214,9 @@ button:not(:disabled) {
 
 .composer textarea {
   display: block;
+  margin: 0;
+  box-sizing: border-box;
+  min-height: 40px;
   min-width: 0;
   max-height: 128px;
   flex: 1;
@@ -1209,12 +1224,15 @@ button:not(:disabled) {
   overflow-y: auto;
   border: 0;
   outline: 0;
+  padding: 8px 0;
   background: transparent;
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 470;
   letter-spacing: -0.006em;
-  line-height: 1.55;
+  line-height: 1.4;
+  text-indent: 0;
+  -webkit-appearance: none;
   scrollbar-width: thin;
 }
 
