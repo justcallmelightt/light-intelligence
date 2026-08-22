@@ -28,7 +28,8 @@ Local Persona Engine으로 안전하게 전환합니다.
 - `율 같음` 답변과 율이 직접 작성한 교정 답변을 검토된 Persona 예시로 저장
 - 검토된 예시를 다음 Gemini 대화에 반영하는 율 같음 개선 Loop
 - 솔직함, 말 많음, 감정 공감과 디자인 우선 성격 강도 조절
-- 대화, 설정, 테마와 교정 기록의 브라우저 내 저장
+- 대화, 설정과 테마의 브라우저 내 저장
+- 검토된 Persona 피드백의 비공개 Vercel Blob 동기화와 안전한 브라우저 임시 보관
 - 율과 서비스 정보를 관리하는 Local 위키
 - 위키 검색, 분류, 공개 범위와 확인 상태 관리
 - 위키 문서 추가, 수정과 삭제
@@ -43,17 +44,20 @@ Local Persona Engine으로 안전하게 전환합니다.
 - **UI & Motion:** CSS, Motion, Lucide React
 - **Build & Runtime:** Vinext, Vite 8, Cloudflare Workers 호환 Runtime
 - **Quality:** ESLint, Node.js Test Runner, TypeScript Type Check
-- **Storage:** Browser `localStorage`
+- **Storage:** Vercel Blob (검토된 Persona 피드백), Browser `localStorage` (대화·설정·테마·위키 임시 보관)
 
 ## 개인정보 보호 및 보안
 
-- 대화 기록, 설정, 교정 기록과 위키 문서는 사용 중인 브라우저의
+- 대화 기록, 설정, 테마와 Local 위키 문서는 사용 중인 브라우저의
   `localStorage`에 저장됩니다.
 - Gemini가 설정된 경우 AI 답변을 만들기 위해 현재 대화의 최근 메시지와 표현 강도
   설정을 Google Gemini API로 전송합니다.
 - Local 위키는 Gemini에 자동으로 전송하지 않습니다.
-- `율 같음` 또는 교정 저장으로 율이 직접 승인한 Persona 예시는 다음 답변을 만들 때
-  최근 8개까지 Gemini에 전송됩니다. 저장 전 화면에서 질문과 답변을 확인할 수 있습니다.
+- `율 같음` 또는 교정 저장으로 율이 직접 승인한 Persona 예시는 Vercel Blob의
+  비공개 저장소에 동기화됩니다. 다음 답변을 만들 때 최근 8개까지 Gemini에 전송되며,
+  저장 전 화면에서 질문과 답변을 확인할 수 있습니다.
+- Vercel Blob 환경 변수가 연결되지 않은 개발 환경에서는 피드백을 브라우저에 임시 보관하고,
+  화면에 서버 동기화가 연결되지 않았음을 표시합니다.
 - 위키 문서마다 `나만 보기`와 `친한 사람` 공개 범위를 기록할 수 있습니다.
 - Gemini API Key는 Server 환경 변수에서만 읽으며 Client Bundle에 포함하지 않습니다.
 - Chat API는 동일 출처 요청만 허용하고, 입력 길이와 최근 대화 수를 제한하며,
@@ -79,6 +83,10 @@ npm run dev
 `.env.local`의 `GOOGLE_GENERATIVE_AI_API_KEY`에 Google AI Studio에서 발급한 Key를
 입력합니다. Key가 없거나 무료 사용량을 초과해도 Local Persona Engine으로 동작합니다.
 
+기기 밖에도 검토된 Persona 피드백을 남기려면 Vercel의 **Storage → Blob**에서 비공개
+Store를 연결한 뒤, 생성된 `BLOB_READ_WRITE_TOKEN`을 Vercel 환경 변수와 `.env.local`에
+등록합니다. Token은 절대 `NEXT_PUBLIC_` 환경 변수나 Git에 넣지 않습니다.
+
 브라우저에서 출력된 Local URL을 엽니다.
 
 ## 검증
@@ -94,7 +102,9 @@ npm test
 - Gemini API Key가 없으면 답변은 Local Persona Engine의 규칙 기반 범위로 제한됩니다.
 - 무료 Tier의 Rate Limit과 이용 정책은 Google 계정과 지역에 따라 달라질 수 있습니다.
 - 위키의 공개 범위는 현재 분류용이며 사용자 인증이나 실제 접근 제어는 아닙니다.
-- 위키와 교정 기록은 현재 브라우저에만 저장되어 다른 기기와 동기화되지 않습니다.
+- Local 위키는 현재 브라우저에만 저장되어 다른 기기와 동기화되지 않습니다.
+- 검토된 Persona 피드백은 로그인 기능이 없는 현재 단계에서 브라우저가 가진 동기화 식별자로
+  분리됩니다. 다른 기기에서 같은 피드백을 안전하게 이어 쓰려면 다음 단계의 계정 연결이 필요합니다.
 - Persona 예시는 Foundation Model의 가중치를 학습시키는 방식이 아니라, 다음 요청의
   System Prompt에 검토된 예시로 포함하는 방식입니다.
 - 율이 확인하지 않은 모습은 의도적으로 빈칸으로 남깁니다.

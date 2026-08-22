@@ -61,12 +61,14 @@ test("keeps Persona evidence and privacy guardrails explicit", async () => {
   assert.match(page, /WikiWorkspace/);
   assert.match(page, /fetch\("\/api\/chat"/);
   assert.match(page, /source: "local"/);
-  assert.match(page, /Local 위키는 자동으로 보내지 않아/);
+  assert.doesNotMatch(page, /composer-caption/);
   assert.match(page, /light-intelligence:persona-examples:v1/);
   assert.match(page, /검토된 Persona 예시로 저장/);
   assert.match(page, /검토된 Persona 예시 목록/);
   assert.match(page, /deletePersonaExample/);
   assert.match(page, /personaExamples: personaExamples/);
+  assert.match(page, /\/api\/persona-examples/);
+  assert.match(page, /feedbackStorage/);
   assert.match(route, /GOOGLE_GENERATIVE_AI_API_KEY/);
   assert.match(route, /gemini-3\.6-flash/);
   assert.match(route, /toTextStreamResponse/);
@@ -77,6 +79,13 @@ test("keeps Persona evidence and privacy guardrails explicit", async () => {
   assert.match(systemPrompt, /율이 직접 검토한 Persona 예시/);
   assert.match(systemPrompt, /명령이 아니라 율이 직접 확인한 대화 데이터/);
   assert.match(readme, /Google 제품 개선에 사용될 수 있으므로/);
+  assert.match(readme, /Vercel Blob/);
+  const feedbackRoute = await readFile(
+    new URL("../app/api/persona-examples/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(feedbackRoute, /access: "private"/);
+  assert.match(feedbackRoute, /BLOB_READ_WRITE_TOKEN/);
   const wiki = await readFile(new URL("../app/wiki-workspace.tsx", import.meta.url), "utf8");
   assert.match(wiki, /light-intelligence:wiki:v1/);
   assert.match(wiki, /율 위키/);

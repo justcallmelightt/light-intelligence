@@ -1240,16 +1240,6 @@ button:not(:disabled) {
   opacity: 1;
 }
 
-.composer-caption {
-  width: min(100%, 760px);
-  margin: 7px auto 0;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.4;
-  text-align: center;
-}
-
 .inspector {
   position: relative;
   z-index: 4;
@@ -2001,11 +1991,6 @@ button:not(:disabled) {
   .composer {
     min-height: 52px;
     padding-left: 16px;
-  }
-
-  .composer-caption {
-    padding: 0 10px;
-    font-size: 9px;
   }
 
   .overlay {

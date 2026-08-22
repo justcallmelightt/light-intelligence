@@ -116,6 +116,7 @@ const STORAGE_KEYS = {
   messages: "light-intelligence:messages",
   settings: "light-intelligence:settings",
   personaExamples: "light-intelligence:persona-examples:v1",
+  personaProfileId: "light-intelligence:persona-profile-id:v1",
   theme: "light-intelligence:theme",
 };
 
@@ -152,6 +153,9 @@ export default function Home() {
   const [feedbackDraft, setFeedbackDraft] =
     useState<FeedbackDraft | null>(null);
   const [personaExamples, setPersonaExamples] = useState<PersonaExample[]>([]);
+  const [feedbackStorage, setFeedbackStorage] = useState<
+    "checking" | "synced" | "offline"
+  >("checking");
   const [hasUnseen, setHasUnseen] = useState(false);
   const [workspace, setWorkspace] = useState<"chat" | "wiki">("chat");
 
@@ -183,6 +187,38 @@ export default function Home() {
       setTheme(storedTheme === "light" ? "light" : "dark");
       setHydrated(true);
     });
+
+    const profileId =
+      window.localStorage.getItem(STORAGE_KEYS.personaProfileId) ?? createId();
+    window.localStorage.setItem(STORAGE_KEYS.personaProfileId, profileId);
+
+    void fetch(`/api/persona-examples?profileId=${encodeURIComponent(profileId)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Feedback store unavailable");
+        return (await response.json()) as { examples: PersonaExample[] };
+      })
+      .then(async ({ examples }) => {
+        if (examples.length) {
+          const remoteExamples = examples.slice(-MAX_PERSONA_EXAMPLES);
+          setPersonaExamples(remoteExamples);
+          window.localStorage.setItem(
+            STORAGE_KEYS.personaExamples,
+            JSON.stringify(remoteExamples),
+          );
+        } else if (storedExamples.length) {
+          const migration = await fetch("/api/persona-examples", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              profileId,
+              examples: storedExamples.slice(-MAX_PERSONA_EXAMPLES),
+            }),
+          });
+          if (!migration.ok) throw new Error("Feedback migration unavailable");
+        }
+        setFeedbackStorage("synced");
+      })
+      .catch(() => setFeedbackStorage("offline"));
   }, []);
 
   useEffect(() => {
@@ -194,6 +230,34 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
   }, [hydrated, settings]);
+
+  const savePersonaExamples = async (next: PersonaExample[]) => {
+    const normalized = next.slice(-MAX_PERSONA_EXAMPLES);
+    setPersonaExamples(normalized);
+    window.localStorage.setItem(
+      STORAGE_KEYS.personaExamples,
+      JSON.stringify(normalized),
+    );
+
+    const profileId = window.localStorage.getItem(STORAGE_KEYS.personaProfileId);
+    if (!profileId) {
+      setFeedbackStorage("offline");
+      return;
+    }
+
+    setFeedbackStorage("checking");
+    try {
+      const response = await fetch("/api/persona-examples", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId, examples: normalized }),
+      });
+      if (!response.ok) throw new Error("Feedback sync unavailable");
+      setFeedbackStorage("synced");
+    } catch {
+      setFeedbackStorage("offline");
+    }
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -382,11 +446,7 @@ export default function Home() {
       ...personaExamples.filter((item) => item.messageId !== messageId),
       example,
     ].slice(-MAX_PERSONA_EXAMPLES);
-    window.localStorage.setItem(
-      STORAGE_KEYS.personaExamples,
-      JSON.stringify(next),
-    );
-    setPersonaExamples(next);
+    void savePersonaExamples(next);
     setMessages((current) =>
       current.map((message) =>
         message.id === messageId
@@ -417,11 +477,7 @@ export default function Home() {
       ),
       example,
     ].slice(-MAX_PERSONA_EXAMPLES);
-    window.localStorage.setItem(
-      STORAGE_KEYS.personaExamples,
-      JSON.stringify(next),
-    );
-    setPersonaExamples(next);
+    void savePersonaExamples(next);
     setMessages((current) =>
       current.map((message) =>
         message.id === feedbackDraft.messageId
@@ -435,11 +491,7 @@ export default function Home() {
   const deletePersonaExample = (exampleId: string) => {
     const target = personaExamples.find((example) => example.id === exampleId);
     const next = personaExamples.filter((example) => example.id !== exampleId);
-    window.localStorage.setItem(
-      STORAGE_KEYS.personaExamples,
-      JSON.stringify(next),
-    );
-    setPersonaExamples(next);
+    void savePersonaExamples(next);
     if (target) {
       setMessages((current) =>
         current.map((message) =>
@@ -808,9 +860,6 @@ export default function Home() {
               )}
             </motion.button>
           </form>
-          <p className="composer-caption">
-            대화와 승인한 Persona 예시는 Gemini로 전송돼. Local 위키는 자동으로 보내지 않아.
-          </p>
         </div>
       </section>
       )}
@@ -832,6 +881,7 @@ export default function Home() {
         <InspectorContent
           message={selectedAssistant}
           feedbackCount={personaExamples.length}
+          feedbackStorage={feedbackStorage}
           examples={personaExamples}
           onDeleteExample={deletePersonaExample}
         />
@@ -863,6 +913,7 @@ export default function Home() {
               <InspectorContent
                 message={selectedAssistant}
                 feedbackCount={personaExamples.length}
+                feedbackStorage={feedbackStorage}
                 examples={personaExamples}
                 onDeleteExample={deletePersonaExample}
               />
@@ -892,11 +943,13 @@ export default function Home() {
 function InspectorContent({
   message,
   feedbackCount,
+  feedbackStorage,
   examples,
   onDeleteExample,
 }: {
   message?: ChatMessage;
   feedbackCount: number;
+  feedbackStorage: "checking" | "synced" | "offline";
   examples: PersonaExample[];
   onDeleteExample: (exampleId: string) => void;
 }) {
@@ -949,7 +1002,11 @@ function InspectorContent({
           <strong>{feedbackCount}</strong>
         </div>
         <p>
-          이 기기에 저장되고 다음 Gemini 요청에 필요한 예시만 포함돼. Foundation
+          {feedbackStorage === "synced"
+            ? "비공개 서버 저장소에 동기화됐고, 다음 Gemini 요청에는 필요한 예시만 포함돼."
+            : feedbackStorage === "checking"
+              ? "피드백 저장 상태를 확인하는 중이야."
+              : "서버 저장소가 아직 연결되지 않아 이 브라우저에 임시 보관 중이야."} Foundation
           Model 자체를 학습했다고 표현하지 않아.
         </p>
       </div>
