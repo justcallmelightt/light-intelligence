@@ -9,7 +9,10 @@ const MAX_PROMPT_LENGTH = 1_200;
 const MAX_RESPONSE_LENGTH = 2_000;
 const MAX_NOTE_LENGTH = 500;
 
-const storeIsConfigured = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+// Vercel project 연결은 BLOB_STORE_ID를 자동 주입하고, Vercel Runtime에서는
+// OIDC 자격 증명으로 private Blob을 읽고 쓸 수 있다. 로컬 개발은 token을 사용한다.
+const storeIsConfigured = () =>
+  Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 
 const isSameOrigin = (request: Request) => {
   const origin = request.headers.get("origin");
